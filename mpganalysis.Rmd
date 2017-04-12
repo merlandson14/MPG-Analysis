@@ -1,0 +1,103 @@
+---
+title: "MPG Analysis on Auto vs Manual Transmissions"
+author: "M Erlandson"
+date: "July 9, 2016"
+output: pdf_document
+---
+
+# Summary
+
+This is a data analysis of the mtcars dataset included in R. We will be analyzing how much several variables, such as the number of cylinders or carborators, affect the MPG outcome on both standard (manual) and automatic transmissions.
+
+# Initial Exploration
+
+We first load the data, all necessary libraries for analysis (ggplot2 and GGally), and take a quick look at the headers and first values. (Output from str(mtcars) hidden to shorten this paper.)
+
+```{r load, echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+data(mtcars)
+library(ggplot2)
+require(GGally)
+library(gvlma)
+str(mtcars)
+```
+
+From the write up, We know that cyl, vs, am, gear, and carb can all be factor variables, and it is the AM variable (automatic 0 or manual 1 transmission) that is the focus of this study. Appendix plot #1 is a graph of all the variables cross-plotted with each other to see what relationships we might have. There is quite a bit of correlation between most of the variables and mpg (shown all in column 1), with the exception of qsec, which doesn't make sense in relation to mpg anyway.
+
+# MPG Analysis
+
+## Question 1) Which transmission is better for MPG?
+
+```{r linearsimple, results='hide'}
+fitAM <- lm(mpg ~ am, mtcars)
+coef(fitAM)
+```
+
+Since mpg is a continuous value, we can use linear regression for our models. This simple linear regression says that there is a `r round(coef(fitAM)[2], 2)` mpg increase going from automatic to manual transmission, as seen in Appendix plot #2, but is there more going on here? What other factors might be involved? 
+
+## Question 2) Quantify the MPG difference between transmission types.
+
+Let's look at comparisons with all the factor variables. We'll start with number of gears, since that's most related to the transmission, then add cylinders to the mix, and finally carborators that are attached to the cylinders in the engine. (See the appendix for R code and output.)
+
+The comparison shows that the inclusion of gears does not make any significant change in the analysis, but the inclusion of cylinders does in a very big way (and a negative impact, at that) and carborators to a smaller extent. 
+
+We can run a second test with the other non-factor variables, also shown in the appendix. According to those results, displacement has a huge effect on mpg (also negatively, so the bigger the engine, the less efficient it is), with hp and wt coming in a distant second and third, similar to carborators. 
+
+## Final Model
+
+Let's fit a model with the two biggest adjustments, cyl and disp.
+
+```{r fitamcylcarb}
+fitAMcylDisp <- lm(mpg ~ am + cyl + disp, mtcars)
+summary(fitAMcylDisp)$coef
+```
+
+Now taking into account the other variables, the adjusted coefficient for AM is `r round(coef(fitAMcylDisp)[2], 2)`. This is still positive, so the manual transmission might give a better MPG performance (`r round(coef(fitAMcylDisp)[1]+coef(fitAMcylDisp)[2], 2)` mpg) than the automatic (`r round(coef(fitAMcylDisp)[1], 2)` mpg), though it's p-value says there's not a significant difference.
+
+## Residuals
+
+Let's check our residuals to see if this is right. Appendix plot #3 shows the residuals after cyl has been removed and plot #4 shows the residuals after disp has been removed. In both cases, the values are much more random and don't appear to have any significant linear relationship. This agrees with our estimate that there is really no change between manual and automatic transmissions.
+
+## Uncertainty
+
+How much do the additional regressors change the variance? According to theory, *any* addition of regressors increases our standard error. The simple model has a small std error (`r summary(fitAM)$coef[1, 2]`) whereas the more multivariate model has a larger std error (`r summary(fitAMcylDisp)$coef[1, 2]`), almost twice, and it makes us less certain of our outcomes.
+
+We should also check our assumptions using the gvlma pkg, shown below. According to the test, our global stat and link functions are not satisfied (p-values less than 5%) so a new analysis may be needed.
+
+```{r assumptions}
+gvmodel <- gvlma(fitAMcylDisp)
+display.gvlmatests(gvmodel)
+```
+
+# Appendix
+
+```{r pairsplot, echo=FALSE, cache.lazy=TRUE, fig.height=5}
+g <- ggpairs(mtcars, lower = list(continuous = "smooth"), title = "Cross-plot of Mtcars Variables")
+g <- g + theme(axis.text.x = element_blank(), axis.text.y = element_blank())
+g
+```
+```{r plots, echo=FALSE, cache.lazy=TRUE, fig.height=3.5}
+g1 <- ggplot(mtcars, aes(x=am, y=mpg))
+g1 <- g1 + geom_point(colour = "grey")
+g1 <- g1 + geom_abline(intercept = coef(fitAM)[1], slope = coef(fitAM)[2])
+g1 <- g1 + ggtitle("Basic Transmission to MPG")
+g1
+```
+```{r factorcompare}
+fitAM1 <- update(fitAM, mpg ~ am + gear)
+fitAM2 <- update(fitAM, mpg ~ am + gear + cyl)
+fitAM3 <- update(fitAM, mpg ~ am + gear + cyl + carb)
+anova(fitAM, fitAM1, fitAM2, fitAM3)
+```
+```{r varcompare}
+fitAM4 <- update(fitAM, mpg ~ am + disp)
+fitAM5 <- update(fitAM, mpg ~ am + disp + hp)
+fitAM6 <- update(fitAM, mpg ~ am + disp + hp + drat)
+fitAM7 <- update(fitAM, mpg ~ am + disp + hp + drat + wt)
+anova(fitAM, fitAM4, fitAM5, fitAM6, fitAM7)
+```
+```{r residplots, fig.height=4}
+plot(resid(lm(am~cyl, mtcars)), resid(lm(mpg~cyl, mtcars)), 
+     main="Residuals -- Adjusting for Cyl", xlab="AM resids", ylab="MPG resids")
+plot(resid(lm(am~disp, mtcars)), resid(lm(mpg~disp, mtcars)), 
+     main="Residuals -- Adjusting for Disp", xlab="AM resids", ylab="MPG resids")
+```
